@@ -1,0 +1,79 @@
+import pandas as pd // 데이터 프레임 작업 패키지
+import numpy as np  // 대규모 수학 연산 패키지
+import matplotlib.pyplot as plt // 매트랩 그래프 시각화 패키지
+import seaborn as sns // Matplotlib을 기반으로 다양한 색상 테마와 통계용 차트 등의 기능을 추가한 시각화 패키지
+import itertools // itertools - 효율적인 루핑을위한 반복자를 만드는 함수. 
+import gc // 가비지 컬렉터
+import os // 운영체제 인터페이스
+import sys //  파이썬 인터프리터 모듈
+
+sns.set_style('darkgrid')
+sns.set_palette('bone')
+
+#pd.options.display.float_format = '{:.5g}'.format
+pd.options.display.float_format = '{:,.2f}'.format
+
+print(os.listdir("../input")) // 현재 input 안의 파일 내용을 출력 ['train_V2.csv', 'test_V2.csv', 'sample_submission_V2.csv']
+
+def toTapleList(list1,list2):
+    return list(itertools.product(list1,list2))
+
+%%time
+train = pd.read_csv('../input/train_V2.csv') // train 파일을 불러옴
+train = reduce_mem_usage(train)
+test = pd.read_csv('../input/test_V2.csv') // test 파일을 불러옴
+test = reduce_mem_usage(test)
+print(train.shape, test.shape)
+
+
+train.info() // train의 정보
+
+null_cnt = train.isnull().sum().sort_values() // 결측값(NaN) 확인 / 결측값 갯수 / 정렬
+print(null_cnt[null_cnt > 0]) // NaN값 갯수를 확인
+# dropna
+train.dropna(inplace=True) // 결측값 제거
+
+train.describe(include=np.number).drop('count').T // 데이터 분포를 요약하는 테이블 생성
+
+for c in ['Id','groupId','matchId']:
+    print(f'unique [{c}] count:', train[c].nunique()) // ID의 갯수 , 그룹아이디 갯수 , 매치아이디 출력
+
+fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+
+train.groupby('matchId')['matchType'].first().value_counts().plot.bar(ax=ax[0]) // 매칭 타입에 관한 그래프 생성
+
+'''
+solo  <-- solo,solo-fpp,normal-solo,normal-solo-fpp
+duo   <-- duo,duo-fpp,normal-duo,normal-duo-fpp,crashfpp,crashtpp
+squad <-- squad,squad-fpp,normal-squad,normal-squad-fpp,flarefpp,flaretpp
+'''
+mapper = lambda x: 'solo' if ('solo' in x) else 'duo' if ('duo' in x) or ('crash' in x) else 'squad'
+train['matchType'] = train['matchType'].apply(mapper)
+train.groupby('matchId')['matchType'].first().value_counts().plot.bar(ax=ax[1]) // 축약한 그래프 생성
+
+
+for q in ['numGroups == maxPlace','numGroups != maxPlace']:
+    print(q, ':', len(train.query(q))) // 총순위와 플레이어 순위가 같은 경우와 다른경우 출력
+
+# describe
+cols = ['numGroups','maxPlace']
+desc1 = train.groupby('matchType')[cols].describe()[toTapleList(cols,['min','mean','max'])]
+# groups in match
+group = train.groupby(['matchType','matchId','groupId']).count().groupby(['matchType','matchId']).size().to_frame('groups in match')
+desc2 = group.groupby('matchType').describe()[toTapleList(['groups in match'],['min','mean','max'])]
+
+pd.concat([desc1, desc2], axis=1)
+
+
+# players in match, group
+# 100 players join the same server,
+# so in the case of duos the max teams are 50 and in the case of squads the max teams are 25.
+match = train.groupby(['matchType','matchId']).size().to_frame('players in match')
+group = train.groupby(['matchType','matchId','groupId']).size().to_frame('players in group')
+pd.concat([match.groupby('matchType').describe()[toTapleList(['players in match'],['min','mean','max'])], 
+           group.groupby('matchType').describe()[toTapleList(['players in group'],['min','mean','max'])]], axis=1)
+
+
+
+
+
