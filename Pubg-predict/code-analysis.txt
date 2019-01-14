@@ -64,6 +64,8 @@ desc2 = group.groupby('matchType').describe()[toTapleList(['groups in match'],['
 
 pd.concat([desc1, desc2], axis=1)
 
+//매칭 타입에 따른 그룹수, 순위 , 매치수의 최소 최대 평균을 구해서 표 생성
+
 
 # players in match, group
 # 100 players join the same server,
@@ -73,7 +75,93 @@ group = train.groupby(['matchType','matchId','groupId']).size().to_frame('player
 pd.concat([match.groupby('matchType').describe()[toTapleList(['players in match'],['min','mean','max'])], 
            group.groupby('matchType').describe()[toTapleList(['players in group'],['min','mean','max'])]], axis=1)
 
+print(group['players in group'].nlargest(5))
+del match,group
+
+''' ex) matchId=='41a634f62f86b7', groupId=='128b07271aa012'
+'''
+subset = train[train['matchId']=='41a634f62f86b7']
+sub_grp = subset[subset['groupId']=='128b07271aa012']
+
+print('matchId==\'41a634f62f86b7\' & groupId==\'128b07271aa012\'')
+print('-'*50)
+print('players:',len(subset))
+print('groups:',subset['groupId'].nunique())
+print('numGroups:',subset['numGroups'].unique())
+print('maxPlace:',subset['maxPlace'].unique())
+print('-'*50)
+print('max-group players:',len(sub_grp))
+print('max-group winPlacePerc:',sub_grp['winPlacePerc'].unique())
+print('-'*50)
+print('winPlacePerc:',subset['winPlacePerc'].sort_values().unique())
+
+group = train.groupby(['matchId','groupId','matchType'])['Id'].count().to_frame('players').reset_index()
+group.loc[group['players'] > 4, 'players'] = '5+'
+group['players'] = group['players'].astype(str)
+
+fig, ax = plt.subplots(1, 3, figsize=(16, 3))
+for mt, ax in zip(['solo','duo','squad'], ax.ravel()):
+    ax.set_xlabel(mt)
+    group[group['matchType'] == mt]['players'].value_counts().sort_index().plot.bar(ax=ax)
+
+fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+# there are two types of maps?
+train['matchDuration'].hist(bins=50, ax=ax[0])
+train.query('matchDuration >= 1400 & matchDuration <= 1800')['matchDuration'].hist(bins=50, ax=ax[1])
+
+train[train['matchDuration'] == train['matchDuration'].min()].head()
+
+train[train['matchDuration'] == train['matchDuration'].max()].head()
+
+# same match is same duration
+(train.groupby('matchId')['matchDuration'].nunique() > 1).any()
 
 
+fig, ax = plt.subplots(1, 2, figsize=(12, 3), sharey=True)
 
+cols = ['boosts','heals']
+for col, ax in zip(cols, ax.ravel()):
+    sub = train[['winPlacePerc',col]].copy()
+    mv = (sub[col].max() // 5) + 1
+    sub[col] = pd.cut(sub[col], [5*x for x in range(0,mv)], right=False)
+    sub.groupby(col).mean()['winPlacePerc'].plot.bar(ax=ax)
+
+
+# solo players are not revives
+'solo' in train.query('revives > 0')['matchType'].unique()
+
+plt.figure(figsize=(6,3))
+col = 'revives'
+sub = train.loc[~train['matchType'].str.contains('solo'),['winPlacePerc',col]].copy()
+sub[col] = pd.cut(sub[col], [5*x for x in range(0,8)], right=False)
+sub.groupby(col).mean()['winPlacePerc'].plot.bar()
+
+
+train.groupby(['matchType'])['killPlace'].describe()[['min','mean','max']]
+
+plt.figure(figsize=(8,3))
+col = 'killPlace'
+sub = train[['winPlacePerc',col]].copy()
+sub[col] = pd.cut(sub[col], [10*x for x in range(0,11)], right=False)
+sub.groupby(col).mean()['winPlacePerc'].plot.bar()
+
+''' important 
+killPlace is a sorted ranking of kills and winPlacePerc in each match.
+'''
+subMatch = train[train['matchId'] == train['matchId'].min()].sort_values(['winPlacePerc','killPlace'])
+cols = ['groupId','kills','winPlacePerc','killPlace']
+subMatch[cols]
+
+fig, ax = plt.subplots(1, 2, figsize=(16, 3))
+
+col = 'kills'
+sub = train[['winPlacePerc',col]].copy()
+sub[col] = pd.cut(sub[col], [5*x for x in range(0,20)], right=False)
+sub.groupby(col).mean()['winPlacePerc'].plot.bar(ax=ax[0])
+train[col].hist(bins=50, ax=ax[1])
+
+# kills summary of match
+sub = train['matchType'].str.contains('solo')
+pd.concat([train.loc[sub].groupby('matchId')['kills'].sum().describe(),
+         train.loc[~sub].groupby('matchId')['kills'].sum().describe()], keys=['solo','team'], axis=1).T
 
